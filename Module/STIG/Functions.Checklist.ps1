@@ -41,12 +41,12 @@ function New-StigCheckList
         $ReferenceConfiguration,
 
         [Parameter(Mandatory = $true, ParameterSetName = 'result')]
-        [System.Collections.ArrayList]
+        [psobject]
         $DscResult,
 
         [Parameter(Mandatory = $true)]
-        [string]
-        $XccdfPath,
+        [string[]]
+        $xccdfPaths,
 
         [Parameter(Mandatory = $true)]
         [System.IO.FileInfo]
@@ -76,7 +76,7 @@ function New-StigCheckList
         throw "$($OutputPath.FullName) is not a valid checklist extension. Please provide a full valid path ending in .ckl"
     }
 
-    if (-not (Test-Path -Path $ReferenceConfiguration))
+    if ($PSCmdlet.ParameterSetName -eq 'mof' -and -not (Test-Path -Path $ReferenceConfiguration))
     {
         throw "$($ReferenceConfiguration) is not a valid path to a configuration (.mof) file. Please provide a valid entry."
     }
@@ -120,153 +120,164 @@ function New-StigCheckList
     #endregion ASSET
 
     $writer.WriteStartElement("STIGS")
-    $writer.WriteStartElement("iSTIG")
 
-    #region STIGS/iSTIG/STIG_INFO
+    foreach($xccdfPath in $xccdfPaths) {
 
-    $writer.WriteStartElement("STIG_INFO")
+        $writer.WriteStartElement("iSTIG")
 
-    $xccdfBenchmarkContent = Get-StigXccdfBenchmarkContent -Path $xccdfPath
+        #region STIGS/iSTIG/STIG_INFO
 
-    $stigInfoElements = [ordered] @{
-        'version'        = $xccdfBenchmarkContent.version
-        'classification' = 'UNCLASSIFIED'
-        'customname'     = ''
-        'stigid'         = $xccdfBenchmarkContent.id
-        'description'    = $xccdfBenchmarkContent.description
-        'filename'       = Split-Path -Path $xccdfPath -Leaf
-        'releaseinfo'    = $xccdfBenchmarkContent.'plain-text'.InnerText
-        'title'          = $xccdfBenchmarkContent.title
-        'uuid'           = (New-Guid).Guid
-        'notice'         = $xccdfBenchmarkContent.notice.InnerText
-        'source'         = $xccdfBenchmarkContent.reference.source
-    }
+        $writer.WriteStartElement("STIG_INFO")
 
-    foreach ($StigInfoElement in $stigInfoElements.GetEnumerator())
-    {
-        $writer.WriteStartElement("SI_DATA")
+        $xccdfBenchmarkContent = Get-StigXccdfBenchmarkContent -Path $xccdfPath
 
-        $writer.WriteStartElement('SID_NAME')
-        $writer.WriteString($StigInfoElement.name)
-        $writer.WriteEndElement(<#SID_NAME#>)
-
-        $writer.WriteStartElement('SID_DATA')
-        $writer.WriteString($StigInfoElement.value)
-        $writer.WriteEndElement(<#SID_DATA#>)
-
-        $writer.WriteEndElement(<#SI_DATA#>)
-    }
-
-    $writer.WriteEndElement(<#STIG_INFO#>)
-
-    #endregion STIGS/iSTIG/STIG_INFO
-
-    #region STIGS/iSTIG/VULN[]
-
-    foreach ($vulnerability in (Get-VulnerabilityList -XccdfBenchmark $xccdfBenchmarkContent))
-    {
-        $writer.WriteStartElement("VULN")
-
-        foreach ($attribute in $vulnerability.GetEnumerator())
-        {
-            $status = $null
-            $comments = $null
-            $manualCheck = $null
-
-            if ($attribute.Name -eq 'Vuln_Num')
-            {
-                $vid = $attribute.Value
-            }
-
-            $writer.WriteStartElement("STIG_DATA")
-
-            $writer.WriteStartElement("VULN_ATTRIBUTE")
-            $writer.WriteString($attribute.Name)
-            $writer.WriteEndElement(<#VULN_ATTRIBUTE#>)
-
-            $writer.WriteStartElement("ATTRIBUTE_DATA")
-            $writer.WriteString($attribute.Value)
-            $writer.WriteEndElement(<#ATTRIBUTE_DATA#>)
-
-            $writer.WriteEndElement(<#STIG_DATA#>)
+        $stigInfoElements = [ordered] @{
+            'version'        = $xccdfBenchmarkContent.version
+            'classification' = 'UNCLASSIFIED'
+            'customname'     = ''
+            'stigid'         = $xccdfBenchmarkContent.id
+            'description'    = $xccdfBenchmarkContent.description
+            'filename'       = Split-Path -Path $xccdfPath -Leaf
+            'releaseinfo'    = $xccdfBenchmarkContent.'plain-text'.InnerText
+            'title'          = $xccdfBenchmarkContent.title
+            'uuid'           = (New-Guid).Guid
+            'notice'         = $xccdfBenchmarkContent.notice.InnerText
+            'source'         = $xccdfBenchmarkContent.reference.source
         }
 
-        $statusMap = @{
-            NotReviewed   = 'Not_Reviewed'
-            Open          = 'Open'
-            NotAFinding   = 'NotAFinding'
-            NotApplicable = 'Not_Applicable'
+        foreach ($StigInfoElement in $stigInfoElements.GetEnumerator())
+        {
+            $writer.WriteStartElement("SI_DATA")
+
+            $writer.WriteStartElement('SID_NAME')
+            $writer.WriteString($StigInfoElement.name)
+            $writer.WriteEndElement(<#SID_NAME#>)
+
+            $writer.WriteStartElement('SID_DATA')
+            $writer.WriteString($StigInfoElement.value)
+            $writer.WriteEndElement(<#SID_DATA#>)
+
+            $writer.WriteEndElement(<#SI_DATA#>)
         }
 
-        if ($PSCmdlet.ParameterSetName -eq 'mof')
+        $writer.WriteEndElement(<#STIG_INFO#>)
+
+        #endregion STIGS/iSTIG/STIG_INFO
+
+        #region STIGS/iSTIG/VULN[]
+
+        foreach ($vulnerability in (Get-VulnerabilityList -XccdfBenchmark $xccdfBenchmarkContent))
         {
-            $setting = Get-SettingsFromMof -ReferenceConfiguration $referenceConfiguration -Id $vid
-            $manualCheck = $manualCheckData | Where-Object {$_.VulID -eq $VID}
+            $writer.WriteStartElement("VULN")
 
-            if ($setting)
+            foreach ($attribute in $vulnerability.GetEnumerator())
             {
-                $status = $statusMap['NotAFinding']
+                $status = $null
+                $comments = $null
+                $manualCheck = $null
 
-            }
-            elseif ($manualCheck)
-            {
-                $status = $statusMap["$($manualCheck.Status)"]
-                $comments = $manualCheck.Comments
-            }
-            else
-            {
-                $status = $statusMap['NotReviewed']
-            }
-        }
-        elseif ($PSCmdlet.ParameterSetName -eq 'result')
-        {
-            $setting = Get-SettingsFromResult -DscResult $dscResult -Id $vid
+                if ($attribute.Name -eq 'Vuln_Num')
+                {
+                    $vid = $attribute.Value
+                }
 
-            if ($setting)
+                $writer.WriteStartElement("STIG_DATA")
+
+                $writer.WriteStartElement("VULN_ATTRIBUTE")
+                $writer.WriteString($attribute.Name)
+                $writer.WriteEndElement(<#VULN_ATTRIBUTE#>)
+
+                $writer.WriteStartElement("ATTRIBUTE_DATA")
+                $writer.WriteString($attribute.Value)
+                $writer.WriteEndElement(<#ATTRIBUTE_DATA#>)
+
+                $writer.WriteEndElement(<#STIG_DATA#>)
+            }
+
+            $statusMap = @{
+                NotReviewed   = 'Not_Reviewed'
+                Open          = 'Open'
+                NotAFinding   = 'NotAFinding'
+                NotApplicable = 'Not_Applicable'
+            }
+
+            $manualCheck = $manualCheckData.ManualChecks | Where-Object {$_.VulID -eq $VID}
+
+            if ($PSCmdlet.ParameterSetName -eq 'mof')
             {
-                if ($setting.InDesiredState)
+                $setting = Get-SettingsFromMof -ReferenceConfiguration $referenceConfiguration -Id $vid
+                
+                if ($setting)
                 {
                     $status = $statusMap['NotAFinding']
                 }
+                elseif ($manualCheck)
+                {
+                    $status = $statusMap["$($manualCheck.Status)"]
+                }
                 else
                 {
-                    $status = $statusMap['Open']
+                    $status = $statusMap['NotReviewed']
                 }
-
-                $comments = 'Managed via PowerStigDsc from Live call'
             }
-            else
+            elseif ($PSCmdlet.ParameterSetName -eq 'result')
             {
-                $status = $statusMap['NotReviewed']
+                $setting = Get-SettingsFromResult -DscResult $dscResult -Id $vid
+
+                if ($setting)
+                {
+                    if ($setting.InDesiredState)
+                    {
+                        $status = $statusMap['NotAFinding']
+                    }
+                    else
+                    {
+                        $status = $statusMap['Open']
+                    }
+
+                    $comments = "This control is managed by PowerStigDsc."
+                }
+                elseif ($manualCheck)
+                {
+                    $status = $statusMap["$($manualCheck.Status)"]
+                }
+                else
+                {
+                    $status = $statusMap['NotReviewed']
+                }
             }
+            
+            $comments = "$comments $($manualCheck.Comments)"
+
+            $writer.WriteStartElement("STATUS")
+            $writer.WriteString($status)
+            $writer.WriteEndElement(<#STATUS#>)
+
+            $writer.WriteStartElement("FINDING_DETAILS")
+            $writer.WriteString((Get-FindingDetails -Setting $setting))
+            $writer.WriteEndElement(<#FINDING_DETAILS#>)
+
+            $writer.WriteStartElement("COMMENTS")
+            $writer.WriteString($comments)
+            $writer.WriteEndElement(<#COMMENTS#>)
+
+            $writer.WriteStartElement("SEVERITY_OVERRIDE")
+            $writer.WriteString('')
+            $writer.WriteEndElement(<#SEVERITY_OVERRIDE#>)
+
+            $writer.WriteStartElement("SEVERITY_JUSTIFICATION")
+            $writer.WriteString('')
+            $writer.WriteEndElement(<#SEVERITY_JUSTIFICATION#>)
+
+            $writer.WriteEndElement(<#VULN#>)
         }
 
-        $writer.WriteStartElement("STATUS")
-        $writer.WriteString($status)
-        $writer.WriteEndElement(<#STATUS#>)
-
-        $writer.WriteStartElement("FINDING_DETAILS")
-        $writer.WriteString((Get-FindingDetails -Setting $setting))
-        $writer.WriteEndElement(<#FINDING_DETAILS#>)
-
-        $writer.WriteStartElement("COMMENTS")
-        $writer.WriteString($comments)
-        $writer.WriteEndElement(<#COMMENTS#>)
-
-        $writer.WriteStartElement("SEVERITY_OVERRIDE")
-        $writer.WriteString('')
-        $writer.WriteEndElement(<#SEVERITY_OVERRIDE#>)
-
-        $writer.WriteStartElement("SEVERITY_JUSTIFICATION")
-        $writer.WriteString('')
-        $writer.WriteEndElement(<#SEVERITY_JUSTIFICATION#>)
-
-        $writer.WriteEndElement(<#VULN#>)
+        #endregion STIGS/iSTIG/VULN[]
+        
+        $writer.WriteEndElement(<#iSTIG#>)
     }
 
-    #endregion STIGS/iSTIG/VULN[]
 
-    $writer.WriteEndElement(<#iSTIG#>)
     $writer.WriteEndElement(<#STIGS#>)
     $writer.WriteEndElement(<#CHECKLIST#>)
     $writer.Flush()
@@ -399,7 +410,7 @@ function Get-SettingsFromResult
     param
     (
         [Parameter(Mandatory = $true)]
-        [System.Collections.ArrayList]
+        [psobject]
         $DscResult,
 
         [Parameter(Mandatory = $true)]
