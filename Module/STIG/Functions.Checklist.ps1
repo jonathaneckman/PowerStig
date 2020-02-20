@@ -54,16 +54,24 @@ function New-StigCheckList
 
         [Parameter()]
         [String]
-        $ManualCheckFile
+        $ManualCheckFile,
+
+        [Parameter()]
+        [hashtable[]]
+        $ManualChecks
     )
 
-    if ($ManualCheckFile)
+    if($ManualChecks) {
+        $manualCheckData = $ManualChecks
+    }
+    elseif ($ManualCheckFile)
     {
         if (-not (Test-Path -Path $ManualCheckFile))
         {
             throw "$($ManualCheckFile) is not a valid path to a ManualCheckFile. Provide a full valid path"
         }
-        $manualCheckData = Import-PowerShellDataFile -path $ManualCheckFile
+        $data = Import-PowerShellDataFile -path $ManualCheckFile
+        $manualCheckData = $data.ManualChecks
     }
 
     if (-not (Test-Path -Path $OutputPath.DirectoryName))
@@ -201,7 +209,7 @@ function New-StigCheckList
                 NotApplicable = 'Not_Applicable'
             }
 
-            $manualCheck = $manualCheckData.ManualChecks | Where-Object {$_.VulID -eq $VID}
+            $manualCheck = $manualCheckData | Where-Object {$_.VulID -eq $VID}
 
             if ($PSCmdlet.ParameterSetName -eq 'mof')
             {
