@@ -88,6 +88,23 @@ PrivateData = @{
 
     PSData = @{
 
+        Prerelease = 'fork'
+
+        ExternalModuleDependencies = @(
+            'AuditPolicyDsc',
+            'AuditSystemDsc',
+            'AccessControlDsc',
+            'ComputerManagementDsc',
+            'FileContentDsc',
+            'GPRegistryPolicyDsc',
+            'PSDscResources',
+            'SecurityPolicyDsc',
+            'SqlServerDsc',
+            'WindowsDefenderDsc',
+            'xDnsServer',
+            'xWebAdministration'
+        )
+
         # Tags applied to this module. These help with module discovery in online galleries.
         Tags = 'DSC','DesiredStateConfiguration','STIG','PowerStig'
 
